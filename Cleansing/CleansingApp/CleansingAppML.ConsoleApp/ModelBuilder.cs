@@ -7,6 +7,7 @@ using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using CleansingAppML.Model;
+using Microsoft.ML.AutoML;
 
 namespace CleansingAppML.ConsoleApp
 {
@@ -19,6 +20,31 @@ namespace CleansingAppML.ConsoleApp
         // Set a random seed for repeatable/deterministic results across multiple trainings.
         private static MLContext mlContext = new MLContext(seed: 1);
 
+        public static void DoAutoML()
+        {
+            // Load Data
+            IDataView trainingDataView = mlContext.Data.LoadFromTextFile<ModelInput>(
+                                            path: TRAIN_DATA_FILEPATH,
+                                            hasHeader: true,
+                                            separatorChar: ',',
+                                            allowQuoting: true,
+                                            allowSparse: false);
+            var experimentSettings = new MulticlassExperimentSettings();
+            experimentSettings.MaxExperimentTimeInSeconds = 10;
+            
+            MulticlassClassificationExperiment experiment = mlContext.Auto().CreateMulticlassClassificationExperiment(experimentSettings);
+
+            var dataProcessPipeline = mlContext.Transforms.Categorical.OneHotEncoding(new[] { new InputOutputColumnPair("Vehicle Type", "Vehicle Type"), new InputOutputColumnPair("Day", "Day") })
+                                      .Append(mlContext.Transforms.Concatenate("Features", new[] { "Vehicle Type", "Day", "Ride Distance (km)", "Hour" }));
+
+            ExperimentResult<Microsoft.ML.Data.MulticlassClassificationMetrics> experimentResult = experiment.Execute(trainingDataView, labelColumnName:"Saving", preFeaturizer:dataProcessPipeline);
+            var metrics = experimentResult.BestRun.ValidationMetrics;
+            Console.WriteLine($"Macro Accuracy: {metrics.MacroAccuracy:0.##}");
+            Console.WriteLine($"Micro Accuracy: {metrics.MicroAccuracy:0.##}");
+
+            // Save model
+            SaveModel(mlContext, experimentResult.BestRun.Model, MODEL_FILEPATH, trainingDataView.Schema);
+        }
         public static void CreateModel()
         {
             // Load Data
